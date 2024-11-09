@@ -66,6 +66,13 @@ extern TwoWire Wire1;
 
 unsigned long loop_start_us = 0;
 
+#ifdef CRSF
+#include <AlfredoCRSF.h>
+#include <HardwareSerial.h>
+HardwareSerial crsfSerial(1);
+AlfredoCRSF crsf;
+#endif
+
 // ########################## SETUP ##########################
 void setup(){
   // Define Leds as output
@@ -117,6 +124,20 @@ void setup(){
     }
   #endif //ENABLE_IMU 
 
+  #ifdef CRSF
+    crsfSerial.begin(CRSF_BAUD, SERIAL_8N1, CRSF_PIN_RX, CRSF_PIN_TX);
+    if (!crsfSerial)
+    {
+      DEBUG_SERIAL.println(F("CRSF Serial failed to start"));
+      digitalWrite(LED_RED_PIN,HIGH);
+      digitalWrite(LED_GREEN_PIN,LOW);
+    }
+    else
+    {
+      crsf.begin(&crsfSerial);
+      digitalWrite(LED_GREEN_PIN,HIGH);
+    }
+  #endif //CRSF
 
   // Add custom commander commands
   #ifdef DEBUG_SERIAL
@@ -159,7 +180,11 @@ void loop(){
   #ifdef DEBUG_SERIAL
     commander.run(); // reads Serial instance form constructor
   #endif
-  
+
+  #ifdef CRSF  
+    crsf.update();
+  #endif
+
   #ifdef ENABLE_IMU
     AccelData accel;
     GyroData gyro;

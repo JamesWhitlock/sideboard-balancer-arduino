@@ -37,4 +37,12 @@
 #define AHRS
 #define ENABLE_IMU
 
+// Crossfire protocol support
+// #define CRSF                            // Uncomment to enable CRSF telemetry
+#ifdef CRSF
+  #define CRSF_PIN_TX         1           // [-] Pin for CRSF telemetry TX
+  #define CRSF_PIN_RX         3           // [-] Pin for CRSF telemetry RX
+  #define CRSF_BAUD           57600     // [-] Baud rate for CRSF telemetry
+#endif
+
 #endif //  CONFIG_H
