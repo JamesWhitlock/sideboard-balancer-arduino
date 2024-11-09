@@ -34,12 +34,7 @@
   #define REMOTE_BUTTON4 6637800        // Does nothing for now
 #endif 
 
-//#define MPU6050
-//#define ICM20948
-//#define AHRS
-
-#if (defined(MPU6050) + defined(ICM20948)) > 1
-  #error Only one IMU is allowed
-#endif
+#define AHRS
+#define ENABLE_IMU
 
 #endif //  CONFIG_H

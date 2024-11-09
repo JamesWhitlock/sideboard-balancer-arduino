@@ -3,6 +3,7 @@
 #include <Config.h>
 #include <SimpleFOC.h>
 
+
 #ifdef HOVER_SERIAL
   #include <Hoverserial.h>
   Hoverserial hoverserial(Serial2);
@@ -20,30 +21,13 @@
   int debug = 0;
 #endif
 
-#ifdef MPU6050
-  #include <Adafruit_MPU6050.h>
-  Adafruit_MPU6050 mpu;
-  #define IMU MPU6050
+#ifdef ENABLE_IMU
+#ifdef AHRS
+  #include "Adafruit_AHRS_Madgwick.h"
+  Adafruit_Madgwick filter;
 #endif
-
-#ifdef ICM20948
-  #include <Adafruit_ICM20948.h>
-  #include <Adafruit_ICM20X.h>
-  Adafruit_ICM20948 mpu;
-  #define IMU ICM20948
-#endif
-
-#ifdef IMU
-  Adafruit_Sensor *mpu_temp, *mpu_accel, *mpu_gyro;
-  int imu_found = 0;
-
-  #ifdef AHRS
-    #include "Adafruit_AHRS_Madgwick.h"
-   Adafruit_Madgwick filter;
-  #endif
 
 #endif //IMU
-
 
 // Callbacks for custom commander commands
 #ifdef DEBUG_SERIAL
@@ -54,7 +38,7 @@
   #ifdef REMOTE
   void onCmdRemote(char* cmd){ debug ^= PRINT_REMOTE; }
   #endif
-  #ifdef IMU  
+  #ifdef ENABLE_IMU  
     void onCmdAccel(char* cmd){ debug ^= PRINT_ACCEL;}
     void onCmdGyro(char* cmd){ debug ^= PRINT_GYRO;}
     void onCmdTemp(char* cmd){ debug ^= PRINT_TEMP; }
@@ -62,8 +46,25 @@
       void onCmdQuat(char* cmd){ debug ^= PRINT_QUAT; }
       void onCmdEuler(char* cmd){ debug ^= PRINT_EULER; }
     #endif    
-  #endif //IMU
+  #endif //ENABLE_IMU
 #endif
+
+#ifdef ENABLE_IMU
+  #include <FastIMU.h>
+  #include "imu_factory.h"
+  IMUBase* imu;
+#endif //ENABLE_IMU
+
+#ifdef CRSF
+#include <AlfredoCRSF.h>
+#include <HardwareSerial.h>
+HardwareSerial crsfSerial(1);
+AlfredoCRSF crsf;
+#endif
+
+extern TwoWire Wire1;
+
+unsigned long loop_start_us = 0;
 
 // ########################## SETUP ##########################
 void setup(){
@@ -91,7 +92,7 @@ void setup(){
   pinMode(SENSOR1_PIN, INPUT);
   pinMode(SENSOR2_PIN, INPUT);
 
-  BLDCDriver6PWM motor = BLDCDriver6PWM(PA8, PB13, PA9, PB14, PA10, PB15);
+  Wire1.begin();
 
   #ifdef HOVER_SERIAL
     Serial2.begin(HOVER_SERIAL_BAUD);
@@ -101,40 +102,20 @@ void setup(){
     mySwitch.enableReceive(digitalPinToInterrupt(RECEIVER_PIN));  // Receiver on interrupt
   #endif
   
-  #ifdef IMU
-    #ifdef MPU6050
-    if (!mpu.begin()){
-    #endif
-    #ifdef ICM20948
-    if (!mpu.begin_I2C()){
-    #endif
-      digitalWrite(LED_RED_PIN,HIGH);
-      #ifdef DEBUG_SERIAL
-      DEBUG_SERIAL.println(F("Failed to find IMU chip"));
-      #endif
-    }else{
+  #ifdef ENABLE_IMU
+    imu = GetImu(Wire1);
+    if (imu){
+      DEBUG_SERIAL.print(F("IMU found: "));
+      DEBUG_SERIAL.println(imu->IMUName());
       digitalWrite(LED_GREEN_PIN,HIGH);
-      #ifdef DEBUG_SERIAL
-      DEBUG_SERIAL.println(F("IMU found!"));
-      #endif
-      imu_found = 1;
-
-      mpu_temp = mpu.getTemperatureSensor();
-      #ifdef DEBUG_SERIAL
-        mpu_temp->printSensorDetails();
-      #endif
-
-      mpu_accel = mpu.getAccelerometerSensor();
-      #ifdef DEBUG_SERIAL
-        mpu_accel->printSensorDetails();
-      #endif
-
-      mpu_gyro = mpu.getGyroSensor();
-      #ifdef DEBUG_SERIAL
-        mpu_gyro->printSensorDetails();
-      #endif
+      calData cal = {0};
+      imu->init(cal, 0x68); // TODO: GetImu should return the address
     }
-  #endif //IMU 
+    else {
+      DEBUG_SERIAL.println(F("No IMU found"));
+      digitalWrite(LED_RED_PIN,HIGH);
+    }
+  #endif //ENABLE_IMU 
 
 
   // Add custom commander commands
@@ -147,20 +128,22 @@ void setup(){
       commander.add('r',onCmdRemote,"Print Remote");
     #endif
 
-    #ifdef IMU
+    #ifdef ENABLE_IMU
       commander.add('a',onCmdAccel,"Print Accelerometer");
       commander.add('g',onCmdGyro,"Print Gyroscope");
+      if (imu && imu->hasTemperature()){
       commander.add('t',onCmdTemp,"Print Temperature");
+      }
       #ifdef AHRS
         commander.add('q',onCmdQuat,"Print Quaternions");
         commander.add('e',onCmdEuler,"Print Euler Angles");
       #endif
     #endif
     DEBUG_SERIAL.println(F("Hoverboard Serial v1.0"));
-  #endif
-
+  #endif //DEBUG_SERIAL
+  
+  loop_start_us = micros();
 }
-
 
 // ########################## LOOP ##########################
 
@@ -177,66 +160,77 @@ void loop(){
     commander.run(); // reads Serial instance form constructor
   #endif
   
-  #ifdef IMU
-    sensors_event_t accel;
-    sensors_event_t gyro;
-    sensors_event_t temp;
-    if (imu_found){ 
-      mpu_temp->getEvent(&temp);
-      mpu_accel->getEvent(&accel);
-      mpu_gyro->getEvent(&gyro);
+  #ifdef ENABLE_IMU
+    AccelData accel;
+    GyroData gyro;
+
+    if (imu){ 
+      imu->update();
+      imu->getAccel(&accel);
+      imu->getGyro(&gyro);
 
       #ifdef AHRS
-        filter.updateIMU(gyro.gyro.x * 57.29578f, 
-                         gyro.gyro.y * 57.29578f,
-                         gyro.gyro.z * 57.29578f,
-                         accel.acceleration.x, 
-                         accel.acceleration.y,
-                         accel.acceleration.z);
+        filter.updateIMU(gyro.gyroX,
+                         gyro.gyroY,
+                         gyro.gyroZ,
+                         accel.accelX,
+                         accel.accelY,
+                         accel.accelZ);
       #endif
     }
-  #endif //IMU
-
-  // Delay
-  unsigned long timeNow = millis();
-  if (iTimeSend > timeNow) return;
-  iTimeSend = timeNow + TIME_SEND;
+  #endif //ENABLE_IMU
   
-  #ifdef IMU
-    if (imu_found){
+  #ifdef ENABLE_IMU
+    if (imu){
       #ifdef DEBUG_SERIAL
         if (debug & PRINT_TEMP){
           DEBUG_SERIAL.print(F("Temperature "));
-          DEBUG_SERIAL.print(temp.temperature);
+          DEBUG_SERIAL.print(imu->getTemp());
           DEBUG_SERIAL.println(F(" deg C"));
         }
         
         if (debug & PRINT_ACCEL){
           /* Display the results (acceleration is measured in m/s^2) */
           DEBUG_SERIAL.print(F("Accel X: "));
-          DEBUG_SERIAL.print(accel.acceleration.x);
+          DEBUG_SERIAL.print(accel.accelX);
           DEBUG_SERIAL.print(F(" Y: "));
-          DEBUG_SERIAL.print(accel.acceleration.y);
+          DEBUG_SERIAL.print(accel.accelY);
           DEBUG_SERIAL.print(F(" Z: "));
-          DEBUG_SERIAL.print(accel.acceleration.z);
+          DEBUG_SERIAL.print(accel.accelZ);
           DEBUG_SERIAL.println(F(" m/s^2 "));
         }
 
         if (debug & PRINT_GYRO){
           /* Display the results (rotation is measured in rad/s) */
           DEBUG_SERIAL.print(F("Gyro X: "));
-          DEBUG_SERIAL.print(gyro.gyro.x);
+          DEBUG_SERIAL.print(gyro.gyroX);
           DEBUG_SERIAL.print(F(" Y: "));
-          DEBUG_SERIAL.print(gyro.gyro.y);
+          DEBUG_SERIAL.print(gyro.gyroY);
           DEBUG_SERIAL.print(F(" Z: "));
-          DEBUG_SERIAL.print(gyro.gyro.z);
+          DEBUG_SERIAL.print(gyro.gyroZ);
           DEBUG_SERIAL.println(F(" radians/s "));
         }
-        
+
         #ifdef AHRS
-          if (debug & PRINT_QUAT){
-            float qw, qx, qy, qz;
+          float qw, qx, qy, qz;
+          float roll, pitch, yaw;
+
+          if (imu->hasQuatOutput() && debug & PRINT_TEMP){
+            Quaternion quat; 
+            imu->getQuat(&quat);
+            qw=quat.qW;
+            qx=quat.qX;
+            qy=quat.qY;
+            qz=quat.qZ;
+            std::tie(roll, pitch, yaw) = QuatToEuler(qw, qx, qy, qz);
+          } else {
             filter.getQuaternion(&qw, &qx, &qy, &qz);
+            roll = filter.getRoll();
+            pitch = filter.getPitch();
+            yaw = filter.getYaw();
+          }
+
+          if (debug & PRINT_QUAT){
             DEBUG_SERIAL.print(F("qW: "));
             DEBUG_SERIAL.print(qw);
             DEBUG_SERIAL.print(F(" qX: "));
@@ -256,9 +250,9 @@ void loop(){
             DEBUG_SERIAL.println(filter.getYaw());
           }
         #endif //AHRS
-      #endif
+      #endif //DEBUG_SERIAL
     }
-  #endif //IMU
+  #endif //ENABLE_IMU
 
   #ifdef REMOTE
     if (mySwitch.available()) {
@@ -314,4 +308,12 @@ void loop(){
     #endif
     hoverserial.send();
   #endif
+
+  // Delay
+  uint32_t time_now_ms = micros();
+  uint32_t time_diff = time_now_ms - loop_start_us;
+  if (time_diff < LOOP_PERIOD_US) {
+    delayMicroseconds(LOOP_PERIOD_US - time_diff);
+  }
+  loop_start_us = micros();
 }
