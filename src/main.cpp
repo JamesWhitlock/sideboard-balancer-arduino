@@ -124,6 +124,10 @@ void setup(){
     }
   #endif //ENABLE_IMU 
 
+  #ifdef AHRS
+    filter.begin(1000000.0f / LOOP_PERIOD_US);
+  #endif
+
   #ifdef CRSF
     crsfSerial.begin(CRSF_BAUD, SERIAL_8N1, CRSF_PIN_RX, CRSF_PIN_TX);
     if (!crsfSerial)
@@ -240,7 +244,7 @@ void loop(){
           float qw, qx, qy, qz;
           float roll, pitch, yaw;
 
-          if (imu->hasQuatOutput() && debug & PRINT_TEMP){
+          if (imu->hasQuatOutput()){
             Quaternion quat; 
             imu->getQuat(&quat);
             qw=quat.qW;
@@ -268,11 +272,11 @@ void loop(){
 
           if (debug & PRINT_EULER){
             DEBUG_SERIAL.print(F("Roll: "));
-            DEBUG_SERIAL.print(filter.getRoll());
+            DEBUG_SERIAL.print(roll);
             DEBUG_SERIAL.print(F(" Pitch: "));
-            DEBUG_SERIAL.print(filter.getPitch());
+            DEBUG_SERIAL.print(pitch);
             DEBUG_SERIAL.print(F(" Yaw: "));
-            DEBUG_SERIAL.println(filter.getYaw());
+            DEBUG_SERIAL.println(yaw);
           }
         #endif //AHRS
       #endif //DEBUG_SERIAL
