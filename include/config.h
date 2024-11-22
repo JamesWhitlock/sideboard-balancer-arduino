@@ -11,19 +11,15 @@
 #endif
 
 // Hover serial protocol
-#define HOVER_SERIAL                    // Send commands to the mainboard and receive feedback
+// #define HOVER_SERIAL                    // Send commands to the mainboard and receive feedback
 #ifdef HOVER_SERIAL
   #define HOVER_SERIAL_BAUD   115200    // [-] Baud rate for HoverSerial (used to communicate with the hoverboard)
 #endif
 
 // Test
-#define TEST                            // Will send test commands to the mainboard, HOVER_SERIAL should also be enabled
-#ifdef TEST
-  #define SPEED_MAX_TEST      50        // [-] Maximum speed for testing
-  #define SPEED_STEP          2         // [-] Speed step
-#endif
+// #define TEST                            // Will send test commands to the mainboard, HOVER_SERIAL should also be enabled
 
-#define TIME_SEND           100         // [ms] Sending time interval
+#define LOOP_PERIOD_US        100000    // [us] Sending time interval (minimum circa 2500us / 400Hz)
 
 // 433Mhz RF Remote
 //#define REMOTE                          // Uncomment to enable 433Mhz Receiver. 

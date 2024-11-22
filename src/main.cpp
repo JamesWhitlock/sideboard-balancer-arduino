@@ -62,6 +62,12 @@ HardwareSerial crsfSerial(1);
 AlfredoCRSF crsf;
 #endif
 
+#ifdef BALANCER
+#include <pid.h>
+float Kp=2, Ki=5, Kd=1;
+PID balance_pid(Kp, Ki, Kd, 0.1);
+#endif
+
 extern TwoWire Wire1;
 
 unsigned long loop_start_us = 0;
@@ -157,7 +163,7 @@ void setup(){
       commander.add('a',onCmdAccel,"Print Accelerometer");
       commander.add('g',onCmdGyro,"Print Gyroscope");
       if (imu && imu->hasTemperature()){
-      commander.add('t',onCmdTemp,"Print Temperature");
+        commander.add('t',onCmdTemp,"Print Temperature");
       }
       #ifdef AHRS
         commander.add('q',onCmdQuat,"Print Quaternions");
@@ -166,13 +172,15 @@ void setup(){
     #endif
     DEBUG_SERIAL.println(F("Hoverboard Serial v1.0"));
   #endif //DEBUG_SERIAL
+
+  #ifdef BALANCER
+    balance_pid.SetOutputLimits(-1000, 1000);
+  #endif
   
   loop_start_us = micros();
 }
 
 // ########################## LOOP ##########################
-
-unsigned long iTimeSend = 0;
 
 void loop(){
 
@@ -328,14 +336,23 @@ void loop(){
     }
   #endif
 
+  #ifdef BALANCER
+    float forward_demand = crsf.getChannel(3) / 10;
+    float yaw_demand = crsf.getChannel(4) / 10;
+    float error = forward_demand - pitch;
+    float forward = balance_pid.Update(eorr);
+    float left_motor = forward + yaw_demand;
+    float right_motor = forward - yaw_demand;
+
   #ifdef HOVER_SERIAL
     #ifdef TEST
       hoverserial.test();
     #else
-      hoverserial.setCmd1(0);
-      hoverserial.setCmd2(0);
+      hoverserial.setCmd1(left_motor);
+      hoverserial.setCmd2(right_motor);
     #endif
     hoverserial.send();
+  #endif
   #endif
 
   // Delay

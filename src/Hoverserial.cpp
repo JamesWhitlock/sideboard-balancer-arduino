@@ -11,6 +11,8 @@
 #endif
 
 #define START_FRAME 0xABCD      // [-] Start frame definition for reliable serial communication
+#define SPEED_STEP 2            // [-] Speed step for testing
+#define SPEED_MAX_TEST 50       // [-] Maximum speed for testing
 
 Hoverserial::Hoverserial(Stream &serial) : _serial(serial) {
     _cmd1 = 0;
